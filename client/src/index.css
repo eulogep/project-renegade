@@ -29,6 +29,7 @@ button { font: inherit; }
 .hud-bottom { display: flex; justify-content: space-between; align-items: end; gap: 20px; font-size: 10px; font-weight: 700; }
 .objective { display: flex; align-items: center; gap: 10px; color: #dce8ca; text-shadow: 0 2px 2px #050916; }
 .objective-dot { width: 8px; height: 8px; border-radius: 50%; background: #b9f04a; box-shadow: 0 0 12px #b9f04a; }
+.audio-hint { color: #ff8a47; font-size: 8px; letter-spacing: .08em; margin-left: 8px; }
 .lives { color: #91bcb0; }
 .lives strong { color: #ff8a47; letter-spacing: .3em; padding-left: 8px; }
 .title-screen, .modal-screen { position: absolute; inset: 0; z-index: 8; display: flex; align-items: center; justify-content: center; background: linear-gradient(90deg, rgba(4,10,26,.94) 0%, rgba(4,10,26,.64) 52%, rgba(4,10,26,.14) 100%); }
@@ -50,6 +51,13 @@ h1 em { display: block; color: #24e0e6; font-style: normal; text-shadow: 7px 8px
 .modal-card { width: min(500px, calc(100% - 40px)); padding: 38px; background: rgba(5,15,29,.86); border: 1px solid rgba(36,224,230,.42); box-shadow: 0 24px 70px rgba(0,0,0,.45), 0 0 32px rgba(36,224,230,.1); }
 .modal-card h2 { margin: 20px 0 10px; color: #f7f1d9; font: 800 52px/.9 "Barlow Condensed", sans-serif; letter-spacing: -.02em; }
 .modal-card p { color: #9ebdb2; font-size: 13px; line-height: 1.7; margin-bottom: 26px; }
+.leaderboard { margin: 18px 0 26px; border-top: 1px solid rgba(36,224,230,.32); }
+.leaderboard-head, .leaderboard-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 9px 0; border-bottom: 1px solid rgba(158,189,178,.13); font-size: 10px; letter-spacing: .08em; }
+.leaderboard-head { color: #24e0e6; font-size: 9px; letter-spacing: .16em; }
+.leaderboard-row { color: #b5c9bf; }
+.leaderboard-row b { color: #ff8a47; margin-right: 8px; }
+.leaderboard-row strong { color: #f7f1d9; letter-spacing: .16em; }
+.leaderboard-row.is-best { color: #b9f04a; }
 .control-strip { position: absolute; z-index: 6; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 18px; color: rgba(220,232,202,.7); font-size: 9px; letter-spacing: .12em; white-space: nowrap; pointer-events: none; }
 .control-strip b { color: #24e0e6; font-weight: 700; }
 @media (max-width: 760px) { .hud-layer { padding: 14px 14px 15px; } .hud-top { gap: 8px; } .health-track { width: 110px; } .weapon-value { font-size: 16px; } .score-value { font-size: 15px; } .hud-label { font-size: 8px; } .title-content { margin: 0 22px; align-self: center; } h1 { font-size: clamp(52px, 15vw, 84px); } .title-art { background-size: 58vw auto; background-position: 94% 75%; opacity: .28; } .title-footer { left: 14px; right: 14px; font-size: 7px; } .title-footer span:last-child { display: none; } .title-meta { flex-direction: column; gap: 8px; } .control-strip { gap: 9px; font-size: 7px; bottom: 11px; } .control-strip span:nth-child(4), .control-strip span:nth-child(5) { display: none; } .boss-bar-wrap { top: 64px; width: 70vw; } }

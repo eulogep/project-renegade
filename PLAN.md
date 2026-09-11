@@ -15,11 +15,13 @@
 ## Main Build
 
 - **Assets needed:** Original 16:9 island/research-outpost visual reference used as a Babylon backdrop; original transparent operative sprite; original transparent sentinel drone sprite; all uploaded to WebDev storage. Remaining platforms, crates, hazards, projectiles and boss are procedural meshes with a consistent palette.
+- **Audio and progression additions:** A generated 55-second chiptune loop starts after the first pointer or keyboard gesture, procedural square-wave effects reinforce shots, jumps, impacts, pickups and boss warnings, and a second citadel zone adds purple stalker enemies plus the Ember Warden mini-boss before the Sentinel Core.
 - **Verify:**
   - Movement direction matches player input and jump has a readable arc.
   - Projectiles travel left-to-right, enemy bolts damage the player, and weapon changes affect fire cadence/spread.
   - Enemies, destructible crates, hazards, checkpoint, scrolling camera and final Sentinel Core encounter are all reachable in one run.
   - HUD shows vitals, score, loadout, lives, objective and contextual boss health.
+  - Victory persists the run in `localStorage` and displays the top five local scores.
   - Title screen, fast restart, pause, game over and victory all have working controls.
   - No visual glitches, clipping, missing generated textures or browser console errors.
   - `?demo` starts automatically for deterministic screenshot verification.

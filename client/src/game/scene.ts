@@ -15,6 +15,7 @@ import { Scalar } from "@babylonjs/core/Maths/math.scalar";
 
 export type GameMode = "title" | "playing" | "paused" | "gameover" | "victory";
 export type WeaponName = "AR-7" | "VOLT SPREAD" | "ARC LANCE";
+export type LeaderboardEntry = { score: number; zone: string };
 export interface HudState {
   score: number;
   lives: number;
@@ -22,8 +23,11 @@ export interface HudState {
   weapon: WeaponName;
   checkpoint: number;
   bossHealth: number | null;
+  bossName: string | null;
   objective: string;
   mode: GameMode;
+  audioReady: boolean;
+  leaderboard: LeaderboardEntry[];
 }
 export interface GameHandle {
   start(): void;
@@ -33,7 +37,7 @@ export interface GameHandle {
   dispose(): void;
 }
 
-type EnemyKind = "drone" | "trooper" | "turret";
+type EnemyKind = "drone" | "trooper" | "turret" | "stalker";
 type Bullet = { mesh: Mesh; x: number; y: number; vx: number; vy: number; damage: number; enemy: boolean; life: number };
 type Particle = { mesh: Mesh; life: number; max: number; vx: number; vy: number };
 
@@ -69,11 +73,11 @@ class Enemy {
     this.x = x;
     this.y = y;
     this.ground = y;
-    this.maxHealth = kind === "turret" ? 5 : kind === "trooper" ? 3 : 2;
+    this.maxHealth = kind === "turret" ? 5 : kind === "trooper" ? 3 : kind === "stalker" ? 4 : 2;
     this.health = this.maxHealth;
     this.node = MeshBuilder.CreateBox(`${kind}-${x}`, { width: kind === "turret" ? 1.3 : 1.1, height: kind === "trooper" ? 2.1 : 1.1, depth: 0.3 }, scene);
     this.node.isVisible = kind !== "trooper";
-    this.node.material = kind === "turret" ? materials.rust : materials.enemy;
+    this.node.material = kind === "turret" ? materials.rust : kind === "stalker" ? materials.purple : materials.enemy;
     this.node.position.z = -0.2;
     if (kind === "drone") {
       this.sprite = new Sprite(`drone-${x}`, droneManager);
@@ -86,12 +90,13 @@ class Enemy {
     this.t += dt;
     this.shootTimer -= dt;
     if (this.kind === "drone") this.y = this.ground + Math.sin(this.t * 3.4) * 0.65;
+    if (this.kind === "stalker") { this.x += Math.sign(playerX - this.x) * dt * 1.15; this.y = this.ground + Math.sin(this.t * 5) * 0.25; }
     if (this.kind === "trooper") {
       this.x += Math.sign(playerX - this.x) * dt * 0.62;
       this.y = this.ground;
     }
     if (this.shootTimer <= 0 && Math.abs(playerX - this.x) < 20) {
-      this.shootTimer = this.kind === "turret" ? 2.2 : 1.45;
+      this.shootTimer = this.kind === "turret" ? 2.2 : this.kind === "stalker" ? .9 : 1.45;
       const dir = Math.sign(playerX - this.x) || -1;
       const projectile = MeshBuilder.CreateBox("enemy-bolt", { width: 0.44, height: 0.14, depth: 0.14 }, scene);
       projectile.material = materials.enemyBolt;
@@ -177,6 +182,38 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const particles: Particle[] = [];
   const crates: Mesh[] = [];
   let boss: { body: Mesh; core: Mesh; x: number; y: number; health: number; shoot: number; active: boolean } | null = null;
+  let miniBoss: { body: Mesh; core: Mesh; x: number; y: number; health: number; shoot: number; active: boolean } | null = null;
+  let audioReady = false;
+  let audioCtx: AudioContext | null = null;
+  let musicAudio: HTMLAudioElement | null = null;
+  const leaderboardKey = "project-renegade-leaderboard";
+  const readLeaderboard = (): LeaderboardEntry[] => {
+    try { return JSON.parse(localStorage.getItem(leaderboardKey) ?? "[]") as LeaderboardEntry[]; } catch { return []; }
+  };
+  const saveScore = () => {
+    const next = [...readLeaderboard(), { score, zone: boss?.health === 0 ? "FULL CLEAR" : miniBoss?.health === 0 ? "ZONE 02" : "ZONE 01" }].sort((a, b) => b.score - a.score).slice(0, 5);
+    try { localStorage.setItem(leaderboardKey, JSON.stringify(next)); } catch { /* storage is optional */ }
+  };
+  const playSfx = (kind: "shot" | "hit" | "jump" | "pickup" | "boss") => {
+    if (!audioCtx || !audioReady) return;
+    const now = audioCtx.currentTime;
+    const oscillator = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const frequencies = { shot: 410, hit: 130, jump: 260, pickup: 740, boss: 88 };
+    oscillator.type = kind === "boss" ? "sawtooth" : "square";
+    oscillator.frequency.setValueAtTime(frequencies[kind], now);
+    oscillator.frequency.exponentialRampToValueAtTime(kind === "hit" ? 62 : frequencies[kind] * 1.7, now + (kind === "boss" ? .22 : .08));
+    gain.gain.setValueAtTime(.0001, now); gain.gain.exponentialRampToValueAtTime(kind === "boss" ? .09 : .045, now + .006); gain.gain.exponentialRampToValueAtTime(.0001, now + (kind === "boss" ? .24 : .11));
+    oscillator.connect(gain).connect(audioCtx.destination); oscillator.start(now); oscillator.stop(now + (kind === "boss" ? .25 : .12));
+  };
+  const armAudio = () => {
+    if (audioReady) return;
+    const AudioContextCtor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (AudioContextCtor) audioCtx = new AudioContextCtor();
+    musicAudio = new Audio("/manus-storage/project-renegade-chiptune_e54d9a2b.wav"); musicAudio.loop = true; musicAudio.volume = .26;
+    void musicAudio.play().catch(() => undefined);
+    audioReady = true; emitHud();
+  };
   let mode: GameMode = "title";
   let score = 0;
   let objective = "REACH THE CITADEL";
@@ -189,7 +226,8 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   let lastHud = "";
 
   const emitHud = () => {
-    const hud: HudState = { score, lives: player.lives, health: Math.round(player.health), weapon: player.weapon, checkpoint: player.checkpoint, bossHealth: boss?.active ? Math.max(0, boss.health) : null, objective, mode };
+    const activeEncounter = miniBoss?.active && miniBoss.health > 0 ? miniBoss : boss?.active ? boss : null;
+    const hud: HudState = { score, lives: player.lives, health: Math.round(player.health), weapon: player.weapon, checkpoint: player.checkpoint, bossHealth: activeEncounter ? Math.max(0, activeEncounter.health) : null, bossName: miniBoss?.active && miniBoss.health > 0 ? "EMBER WARDEN" : boss?.active ? "SENTINEL CORE" : null, objective, mode, audioReady: audioReady, leaderboard: readLeaderboard() };
     const serial = JSON.stringify(hud);
     if (serial !== lastHud) { lastHud = serial; onHud(hud); }
   };
@@ -198,6 +236,7 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const spawnEnemy = (kind: EnemyKind, x: number, y: number) => enemies.push(new Enemy(kind, x, y, scene, droneManager, materials));
   const buildLevel = () => {
     [15, 26, 42, 56, 72, 88, 103].forEach((x, i) => spawnEnemy(i % 3 === 0 ? "drone" : i % 3 === 1 ? "trooper" : "turret", x, i % 3 === 0 ? -1.5 : GROUND_Y + 1.1));
+    [101, 114].forEach((x) => spawnEnemy("stalker", x, GROUND_Y + 1.1));
     [22, 31, 47, 77, 96].forEach((x) => {
       const crate = MeshBuilder.CreateBox(`crate-${x}`, { width: 1.55, height: 1.55, depth: 0.5 }, scene);
       crate.position.set(x, GROUND_Y + 0.78, -0.15);
@@ -225,6 +264,10 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     boss.core.position.z = -0.85;
     boss.body.isVisible = false;
     boss.core.isVisible = false;
+    const zoneGate = MeshBuilder.CreateBox("zone-two-gate", { width: 1.2, height: 6.4, depth: .4 }, scene);
+    zoneGate.position.set(82, -1.8, .15); zoneGate.material = materials.purple;
+    miniBoss = { body: MeshBuilder.CreateBox("ember-warden-body", { width: 4.2, height: 4.8, depth: .8 }, scene), core: MeshBuilder.CreateCylinder("ember-warden-core", { diameter: 1.45, height: .5, tessellation: 16 }, scene), x: 92, y: GROUND_Y + 2.5, health: 60, shoot: 1.1, active: false };
+    miniBoss.body.material = materials.purple; miniBoss.body.position.z = -.4; miniBoss.core.rotation.x = Math.PI / 2; miniBoss.core.material = materials.lime; miniBoss.core.position.z = -.85; miniBoss.body.isVisible = false; miniBoss.core.isVisible = false;
   };
   const clearLevel = () => {
     enemies.splice(0).forEach((enemy) => enemy.dispose());
@@ -232,6 +275,7 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     particles.splice(0).forEach((particle) => particle.mesh.dispose());
     crates.splice(0).forEach((crate) => crate.dispose());
     if (boss) { boss.body.dispose(); boss.core.dispose(); }
+    if (miniBoss) { miniBoss.body.dispose(); miniBoss.core.dispose(); }
   };
   const reset = () => {
     clearLevel();
@@ -256,13 +300,14 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
       bullets.push({ mesh, x: originX, y: player.y + 0.18, vx: 18, vy: spread * 8, damage: player.weapon === "ARC LANCE" ? 3 : 1, enemy: false, life: 1.8 });
     }
     burst(originX, player.y + 0.18, player.weapon === "ARC LANCE" ? materials.purple : materials.cyan, 3);
+    playSfx("shot");
   };
   const damagePlayer = (amount: number) => {
     if (player.invuln > 0 || mode !== "playing") return;
-    player.health -= amount; player.invuln = 0.8; burst(player.x, player.y, materials.orange, 7);
+    player.health -= amount; player.invuln = 0.8; burst(player.x, player.y, materials.orange, 7); playSfx("hit");
     if (player.health <= 0) {
       player.lives -= 1;
-      if (player.lives <= 0) { setMode("gameover"); return; }
+      if (player.lives <= 0) { saveScore(); setMode("gameover"); return; }
       player.health = 100; player.x = player.checkpoint || 5; player.y = GROUND_Y + 1.55; player.vy = 0; objective = `CHECKPOINT ${player.checkpoint ? "REACHED" : "ACTIVE"}`;
     }
     emitHud();
@@ -270,6 +315,7 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const handleInput = (event: KeyboardEvent, down: boolean) => {
     const key = event.key.toLowerCase();
     if (down) {
+      armAudio();
       keyDown.add(key);
       if (key === " " || key === "w" || key === "arrowup") jumpQueued = true;
       if (key === "j" || key === "k" || key === "z") fireQueued = true;
@@ -285,6 +331,8 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const onKeyUp = (event: KeyboardEvent) => handleInput(event, false);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
+  const onPointerDown = () => armAudio();
+  window.addEventListener("pointerdown", onPointerDown, { once: true });
 
   const update = (dt: number) => {
     if (mode !== "playing") return;
@@ -293,14 +341,19 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     const left = keyDown.has("a") || keyDown.has("arrowleft"); const right = keyDown.has("d") || keyDown.has("arrowright");
     const move = (right ? 1 : 0) - (left ? 1 : 0);
     player.vx = Scalar.Lerp(player.vx, move * 6.3, 0.22); player.x = Scalar.Clamp(player.x + player.vx * dt, 1.2, WORLD_W - 2);
-    if (jumpQueued && player.onGround) { player.vy = 10.7; player.onGround = false; burst(player.x, GROUND_Y + 0.2, materials.lime, 4); }
+    if (jumpQueued && player.onGround) { player.vy = 10.7; player.onGround = false; burst(player.x, GROUND_Y + 0.2, materials.lime, 4); playSfx("jump"); }
     jumpQueued = false;
     player.vy -= 24 * dt; player.y += player.vy * dt;
     const floor = GROUND_Y + 1.55;
     if (player.y <= floor) { player.y = floor; player.vy = 0; player.onGround = true; }
     if (fireQueued || keyDown.has("j") || keyDown.has("k") || keyDown.has("z")) fireQueued = false, fire();
-    if (player.x > 56 && player.checkpoint < 56) { player.checkpoint = 56; objective = "CHECKPOINT LOCKED // BREACH THE CITADEL"; burst(56, GROUND_Y + 2, materials.lime, 14); }
-    if (player.x > 112 && !boss?.active) { if (boss) boss.active = true; objective = "DESTROY THE SENTINEL CORE"; }
+    if (player.x > 56 && player.checkpoint < 56) { player.checkpoint = 56; objective = "CHECKPOINT LOCKED // BREACH THE CITADEL"; burst(56, GROUND_Y + 2, materials.lime, 14); playSfx("pickup"); }
+    if (player.x > 84 && miniBoss && !miniBoss.active && miniBoss.health > 0) { miniBoss.active = true; objective = "ZONE 02 // DEFEAT THE EMBER WARDEN"; playSfx("boss"); }
+    if (miniBoss?.active) {
+      miniBoss.body.isVisible = true; miniBoss.core.isVisible = true; miniBoss.body.position.set(miniBoss.x, miniBoss.y + Math.sin(performance.now() / 250) * .2, -.4); miniBoss.core.position.set(miniBoss.x, miniBoss.y, -.85); miniBoss.core.rotation.y += dt * 3; miniBoss.shoot -= dt;
+      if (miniBoss.shoot <= 0) { miniBoss.shoot = .92; [-.55, 0, .55].forEach((vy) => { const mesh = MeshBuilder.CreateBox("warden-bolt", { width: .5, height: .13, depth: .1 }, scene); mesh.material = materials.lime; bullets.push({ mesh, x: miniBoss!.x - 2, y: miniBoss!.y + vy, vx: -9, vy, damage: 13, enemy: true, life: 3 }); }); }
+    }
+    if (player.x > 112 && !boss?.active && miniBoss?.health === 0) { if (boss) boss.active = true; objective = "DESTROY THE SENTINEL CORE"; playSfx("boss"); }
     if (boss?.active) {
       boss.body.isVisible = true; boss.core.isVisible = true; boss.body.position.set(boss.x, boss.y, -0.4); boss.core.position.set(boss.x, boss.y, -0.85); boss.core.rotation.y += dt * 2.2; boss.shoot -= dt;
       const activeBoss = boss;
@@ -314,7 +367,8 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
       if (!bullet.enemy) {
         let hit = false;
         for (const enemy of enemies) if (Math.abs(bullet.x - enemy.x) < 1.2 && Math.abs(bullet.y - enemy.y) < 1.4) { hit = true; if (enemy.hit(bullet.damage)) { score += enemy.kind === "turret" ? 500 : 250; burst(enemy.x, enemy.y, materials.orange, 13); enemy.dispose(); enemies.splice(enemies.indexOf(enemy), 1); } else burst(bullet.x, bullet.y, materials.white, 3); break; }
-        if (!hit && boss?.active && Math.abs(bullet.x - boss.x) < 2.1 && Math.abs(bullet.y - boss.y) < 2.7) { boss.health -= bullet.damage; hit = true; burst(bullet.x, bullet.y, materials.purple, 4); if (boss.health <= 0) { boss.health = 0; score += 5000; objective = "ISLAND SECURED // SIGNAL BROKEN"; burst(boss.x, boss.y, materials.cyan, 36); setMode("victory"); } }
+        if (!hit && miniBoss?.active && miniBoss.health > 0 && Math.abs(bullet.x - miniBoss.x) < 2.1 && Math.abs(bullet.y - miniBoss.y) < 2.7) { miniBoss.health -= bullet.damage; hit = true; burst(bullet.x, bullet.y, materials.lime, 4); if (miniBoss.health <= 0) { miniBoss.health = 0; miniBoss.active = false; miniBoss.body.isVisible = false; miniBoss.core.isVisible = false; score += 2500; player.checkpoint = 88; objective = "ZONE 02 CLEARED // CITADEL APPROACH"; burst(miniBoss.x, miniBoss.y, materials.lime, 28); playSfx("pickup"); } }
+        if (!hit && boss?.active && Math.abs(bullet.x - boss.x) < 2.1 && Math.abs(bullet.y - boss.y) < 2.7) { boss.health -= bullet.damage; hit = true; burst(bullet.x, bullet.y, materials.purple, 4); if (boss.health <= 0) { boss.health = 0; score += 5000; objective = "ISLAND SECURED // SIGNAL BROKEN"; burst(boss.x, boss.y, materials.cyan, 36); saveScore(); setMode("victory"); } }
         if (hit) { bullet.mesh.dispose(); bullets.splice(i, 1); continue; }
         for (const crate of crates) if (crate.isDisposed() === false && Math.abs(bullet.x - crate.position.x) < 1.1 && Math.abs(bullet.y - crate.position.y) < 1.1) { crate.scaling.x -= 0.18; burst(bullet.x, bullet.y, materials.white, 2); if (crate.scaling.x < 0.2) { score += 100; crate.dispose(); } bullet.mesh.dispose(); bullets.splice(i, 1); break; }
       }
@@ -322,7 +376,7 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.life -= dt; p.mesh.position.x += p.vx * dt; p.mesh.position.y += p.vy * dt; p.vy -= 15 * dt; p.mesh.scaling.scaleInPlace(0.96); if (p.life <= 0) { p.mesh.dispose(); particles.splice(i, 1); } }
     for (const mesh of crates) if (!mesh.isDisposed() && mesh.metadata?.hazard !== true && Math.abs(mesh.position.x - player.x) < 1.2 && player.y < GROUND_Y + 2.2) { player.x -= player.vx * dt; }
     if ([36, 64, 92].some((x) => Math.abs(player.x - x) < 1.4) && player.onGround) damagePlayer(7 * dt);
-    if (player.x > 148) setMode("victory");
+    if (player.x > 148) { saveScore(); setMode("victory"); }
     cameraX = Scalar.Lerp(cameraX, Scalar.Clamp(player.x, VIEW_W / 2, WORLD_W - VIEW_W / 2), 0.08); camera.position.x = cameraX; camera.position.y = 0;
     playerSprite.position.set(player.x, player.y, -0.7); playerSprite.angle = player.vx < -0.2 ? 180 : 0; playerSprite.cellIndex = 0;
     emitHud();
@@ -334,6 +388,6 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const togglePause = () => { if (mode === "playing") setMode("paused"); else if (mode === "paused") setMode("playing"); };
   const restart = () => { reset(); mode = "playing"; emitHud(); };
   const resize = () => { engine.resize(); };
-  const dispose = () => { disposed = true; window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); clearLevel(); operativeManager.dispose(); droneManager.dispose(); scene.dispose(); engine.dispose(); };
+  const dispose = () => { disposed = true; window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("pointerdown", onPointerDown); musicAudio?.pause(); musicAudio = null; audioCtx?.close(); clearLevel(); operativeManager.dispose(); droneManager.dispose(); scene.dispose(); engine.dispose(); };
   return { start, togglePause, restart, resize, dispose };
 }

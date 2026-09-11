@@ -8,6 +8,9 @@ const initialHud: HudState = {
   weapon: "AR-7",
   checkpoint: 0,
   bossHealth: null,
+  bossName: null,
+  audioReady: false,
+  leaderboard: [],
   objective: "REACH THE CITADEL",
   mode: "title",
 };
@@ -75,13 +78,13 @@ export default function GameCanvas() {
 
         {hud.bossHealth !== null && hud.mode === "playing" && (
           <div className="boss-bar-wrap">
-            <div className="boss-title"><span>SENTINEL CORE</span><span>HOSTILE // OVERRIDE</span></div>
+            <div className="boss-title"><span>{hud.bossName ?? "HOSTILE"}</span><span>HOSTILE // OVERRIDE</span></div>
             <div className="boss-track"><span style={{ width: `${hud.bossHealth}%` }} /></div>
           </div>
         )}
 
         <div className="hud-bottom">
-          <div className="objective"><span className="objective-dot" /> {hud.objective}</div>
+          <div className="objective"><span className="objective-dot" /> {hud.objective} {!hud.audioReady && hud.mode === "playing" && <small className="audio-hint">CLICK TO ARM AUDIO</small>}</div>
           <div className="lives">LIVES <strong>{"◆".repeat(Math.max(0, hud.lives))}</strong></div>
         </div>
       </div>
@@ -114,6 +117,9 @@ export default function GameCanvas() {
             <span className="eyebrow">{hud.mode === "victory" ? "SIGNAL BROKEN // ISLAND SECURED" : "SIGNAL LOST // OPERATIVE DOWN"}</span>
             <h2>{hud.mode === "victory" ? "Core offline." : "Run it back."}</h2>
             <p>{hud.mode === "victory" ? `Final score ${String(hud.score).padStart(7, "0")}. The Kestrel gate is open.` : "The last checkpoint is still warm. Fast restart, no excuses."}</p>
+            {hud.mode === "victory" && hud.leaderboard && hud.leaderboard.length > 0 && (
+              <div className="leaderboard"><div className="leaderboard-head"><span>LOCAL RANKING</span><span>BEST RUNS</span></div>{hud.leaderboard.map((entry, index) => <div className={`leaderboard-row ${index === 0 ? "is-best" : ""}`} key={`${entry.score}-${index}`}><span><b>{String(index + 1).padStart(2, "0")}</b> {entry.zone}</span><strong>{String(entry.score).padStart(7, "0")}</strong></div>)}</div>
+            )}
             <button className="deploy-button" onClick={restart}>REDEPLOY <b>↗</b></button>
           </div>
         </section>
