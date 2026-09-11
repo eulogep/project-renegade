@@ -1,0 +1,11 @@
+# Assets
+
+**Art direction:** Original crisp pixel-inspired rendering for a tropical military science-fiction arcade game. Palette: deep indigo, teal cyan, ember orange, acid green and warm cream. Strong silhouettes, readable projectiles, dusk atmosphere, restrained CRT scanlines.
+
+| Asset | Purpose | Source / prompt summary | WebDev path |
+|---|---|---|---|
+| `project-renegade-reference.png` | Wide visual target and scrolling backdrop | In-game 16:9 island research outpost with operative, drone, sentinel, crates and HUD | `/manus-storage/project-renegade-reference_8c03c85a.png` |
+| `project-renegade-operative.png` | Player sprite | Original teal armored operative with orange scarf, side-view, transparent background | `/manus-storage/project-renegade-operative_d6cbac57.png` |
+| `project-renegade-drone.png` | Drone enemy sprite | Original dark iron hovering sentinel drone with amber eye, transparent background | `/manus-storage/project-renegade-drone_9215b050.png` |
+
+The three images were generated specifically for this project and uploaded through `manus-upload-file --webdev`. Platforms, hazards, crates, bullets, particles, reactor gate and Sentinel Core are procedural Babylon meshes so the game remains lightweight and deterministic.
