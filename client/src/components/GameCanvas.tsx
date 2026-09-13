@@ -58,6 +58,7 @@ export default function GameCanvas() {
   return (
     <main className="game-shell">
       <canvas ref={canvasRef} className="game-canvas" aria-label="PROJECT RENEGADE game canvas" />
+      {hud.mode === "paused" && <div className="pause-corner" aria-hidden="true">P // PAUSED</div>}
       <div className="scanlines" aria-hidden="true" />
       <div className="hud-layer" aria-live="polite">
         <div className="hud-top">

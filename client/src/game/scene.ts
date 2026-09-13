@@ -221,6 +221,9 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   let keyDown = new Set<string>();
   let jumpQueued = false;
   let fireQueued = false;
+  let coyoteTime = 0;
+  let cameraShake = 0;
+  let cameraShakePower = 0;
   let lastTime = performance.now();
   let disposed = false;
   let lastHud = "";
@@ -283,6 +286,8 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     score = 0; objective = "REACH THE CITADEL"; cameraX = VIEW_W / 2; buildLevel(); setMode("title");
   };
   const burst = (x: number, y: number, color: StandardMaterial, count = 8) => {
+    const available = Math.max(0, 180 - particles.length);
+    count = Math.min(count, available);
     for (let i = 0; i < count; i++) {
       const mesh = MeshBuilder.CreateBox("spark", { width: 0.12, height: 0.12, depth: 0.08 }, scene); mesh.material = color; mesh.position.set(x, y, -0.9);
       particles.push({ mesh, life: 0.36 + Math.random() * 0.28, max: 0.65, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.35) * 7 });
@@ -300,11 +305,12 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
       bullets.push({ mesh, x: originX, y: player.y + 0.18, vx: 18, vy: spread * 8, damage: player.weapon === "ARC LANCE" ? 3 : 1, enemy: false, life: 1.8 });
     }
     burst(originX, player.y + 0.18, player.weapon === "ARC LANCE" ? materials.purple : materials.cyan, 3);
+    cameraShake = Math.max(cameraShake, 0.08); cameraShakePower = Math.max(cameraShakePower, player.weapon === "ARC LANCE" ? 0.1 : 0.045);
     playSfx("shot");
   };
   const damagePlayer = (amount: number) => {
     if (player.invuln > 0 || mode !== "playing") return;
-    player.health -= amount; player.invuln = 0.8; burst(player.x, player.y, materials.orange, 7); playSfx("hit");
+    player.health -= amount; player.invuln = 0.8; burst(player.x, player.y, materials.orange, 7); cameraShake = 0.22; cameraShakePower = 0.18; playSfx("hit");
     if (player.health <= 0) {
       player.lives -= 1;
       if (player.lives <= 0) { saveScore(); setMode("gameover"); return; }
@@ -331,6 +337,8 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const onKeyUp = (event: KeyboardEvent) => handleInput(event, false);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
+  const onBlur = () => { keyDown.clear(); jumpQueued = false; fireQueued = false; if (mode === "playing") setMode("paused"); };
+  window.addEventListener("blur", onBlur);
   const onPointerDown = () => armAudio();
   window.addEventListener("pointerdown", onPointerDown, { once: true });
 
@@ -341,7 +349,8 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     const left = keyDown.has("a") || keyDown.has("arrowleft"); const right = keyDown.has("d") || keyDown.has("arrowright");
     const move = (right ? 1 : 0) - (left ? 1 : 0);
     player.vx = Scalar.Lerp(player.vx, move * 6.3, 0.22); player.x = Scalar.Clamp(player.x + player.vx * dt, 1.2, WORLD_W - 2);
-    if (jumpQueued && player.onGround) { player.vy = 10.7; player.onGround = false; burst(player.x, GROUND_Y + 0.2, materials.lime, 4); playSfx("jump"); }
+    coyoteTime = player.onGround ? 0.1 : Math.max(0, coyoteTime - dt);
+    if (jumpQueued && (player.onGround || coyoteTime > 0)) { player.vy = 10.7; player.onGround = false; coyoteTime = 0; burst(player.x, GROUND_Y + 0.2, materials.lime, 4); playSfx("jump"); }
     jumpQueued = false;
     player.vy -= 24 * dt; player.y += player.vy * dt;
     const floor = GROUND_Y + 1.55;
@@ -377,7 +386,7 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
     for (const mesh of crates) if (!mesh.isDisposed() && mesh.metadata?.hazard !== true && Math.abs(mesh.position.x - player.x) < 1.2 && player.y < GROUND_Y + 2.2) { player.x -= player.vx * dt; }
     if ([36, 64, 92].some((x) => Math.abs(player.x - x) < 1.4) && player.onGround) damagePlayer(7 * dt);
     if (player.x > 148) { saveScore(); setMode("victory"); }
-    cameraX = Scalar.Lerp(cameraX, Scalar.Clamp(player.x, VIEW_W / 2, WORLD_W - VIEW_W / 2), 0.08); camera.position.x = cameraX; camera.position.y = 0;
+    cameraX = Scalar.Lerp(cameraX, Scalar.Clamp(player.x, VIEW_W / 2, WORLD_W - VIEW_W / 2), 0.08); cameraShake = Math.max(0, cameraShake - dt); cameraShakePower = Scalar.Lerp(cameraShakePower, 0, 0.18); camera.position.x = cameraX + (cameraShake > 0 ? (Math.random() - 0.5) * cameraShakePower : 0); camera.position.y = cameraShake > 0 ? (Math.random() - 0.5) * cameraShakePower * 0.5 : 0;
     playerSprite.position.set(player.x, player.y, -0.7); playerSprite.angle = player.vx < -0.2 ? 180 : 0; playerSprite.cellIndex = 0;
     emitHud();
   };
@@ -388,6 +397,6 @@ export async function createGameScene(canvas: HTMLCanvasElement, onHud: (hud: Hu
   const togglePause = () => { if (mode === "playing") setMode("paused"); else if (mode === "paused") setMode("playing"); };
   const restart = () => { reset(); mode = "playing"; emitHud(); };
   const resize = () => { engine.resize(); };
-  const dispose = () => { disposed = true; window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("pointerdown", onPointerDown); musicAudio?.pause(); musicAudio = null; audioCtx?.close(); clearLevel(); operativeManager.dispose(); droneManager.dispose(); scene.dispose(); engine.dispose(); };
+  const dispose = () => { disposed = true; window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("blur", onBlur); window.removeEventListener("pointerdown", onPointerDown); musicAudio?.pause(); musicAudio = null; audioCtx?.close(); clearLevel(); operativeManager.dispose(); droneManager.dispose(); scene.dispose(); engine.dispose(); };
   return { start, togglePause, restart, resize, dispose };
 }

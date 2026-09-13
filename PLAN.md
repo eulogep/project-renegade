@@ -1,5 +1,9 @@
 # Game Plan: PROJECT RENEGADE
 
+## Operating mode
+
+**POLISH** — Preserve the stable Babylon.js vertical slice while improving game feel, feedback, accessibility, focus handling, performance safeguards, and presentation without rewriting the core systems.
+
 ## Risk Tasks
 
 ### 1. Side-view camera and sprite presentation
